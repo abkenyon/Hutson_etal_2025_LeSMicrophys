@@ -28,42 +28,6 @@ def centers_to_edges(xcenter,ycenter):
     edgey[1:] = ycenter+(ycenter[1]-ycenter[0])/2
     return edgex,edgey
 
-def bilinear_interp(grid1x, grid1y, grid2x, grid2y, z):
-    """
-    A method which interpolates a function
-    z(grid1x, grid1y) of a grid (grid1x, grid1y) to another
-    grid (grid2x, grid2y). Returns an array from the approximated
-    function of the second grid (approximation of z(grid2x, grid2y)).
-
-    Written by Austin Coleman, Ph.D.
-    """
-    # Pair flattened x and y values as coordinates
-    coords_from = list(zip(grid1y.flatten(), grid1x.flatten()))
-    Z = z.flatten()
-    # Set up interpolation function with original grid and interp variable
-    interp = interpolate.LinearNDInterpolator(coords_from, Z, fill_value=np.nan)
-    # Interpolate to new grid
-    interpolated_z = interp(grid2y, grid2x)
-    return interpolated_z
-
-def linear_interpolation(data, lat_source, lon_source, lat_target, lon_target):
-    '''
-    A function that interpolates data from a source grid onto a target grid
-    all LON/LAT arrays must be 2-Dimensional (i.e., meshgrid)
-    IMPORTANT: lat,lon 2-D arrays must have dimensions (lon_dim,lat_dim).
-    They must be the same between the source and target. Otherwise, you get weird columns.
-
-    '''
-    # Initialize geographic coordinate system
-    geo = cs.GeographicSystem()
-    # Convert to Earth-Center-Earth-Fixed for common origin
-    cecefx, cecefy, cecefz = geo.toECEF(lon_source, lat_source, lat_source)
-    fecefx, fecefy, fecefz = geo.toECEF(lon_target, lat_target, lat_target)
-    # interpolate ERA precip to WRF grid
-    interp_data = bilinear_interp(cecefx, cecefy, fecefx, fecefy, data)
-    return interp_data
-
-
 def model_loc_of_station(station,run_dir='thom_ruc',return_ll=False):
     # get station latitude and longitude from station file
     stns = np.loadtxt("/nfs/turbo/seas-hutsona/NEXRAD/stn_locations.txt",
@@ -259,7 +223,18 @@ def get_composite_radar(time,stations,radar_file=None,max_refl=False):
     return grid
 
 def get_wrf_for_psd(pdtime,station,run_dir,time=0,reflectivity=False, shift=None):
+    '''
+    This function was designed to grab the specific variables needed to calculate the particle size distributions from the microphysics schemes. Change directory locations when using this code. 
 
+    INPUT:
+    pdtime - a pandas datetime from which the variables are needed
+    station - corresponds to a specific predetermined lat/lon location on the model grid
+    run_dir - directory containing the wrf files. It also tells the function which microphysics scheme will be used for the PSD. 
+    time - index of time output for each wrf file (default: 0)
+    reflectivity - If True, the function will return the reflectivity value at the same location
+    shift - if not None, will shift the results to a grid point around the station of interest
+
+    '''
     # read in wrf variables at surface near station
     
     # get station latitude and longitude from station file
@@ -343,7 +318,11 @@ def get_wrf_for_psd(pdtime,station,run_dir,time=0,reflectivity=False, shift=None
             return ns,qs
     
 def find_moments(temp,pres,qv,qs):
+    '''
+    This function calculates the second and third moment of the particle size distribution as described in Thompson et al. 2008 and Field et al. 2005. These moments are needed to find the PSD for the Thompson scheme. 
 
+    Input can come directly from the "get_wrf_for_psd" function. 
+    '''
     # calculate second moment
     rho = (0.622*pres)/(287.04*temp*(0.622+qv))
     
@@ -376,6 +355,18 @@ def find_moments(temp,pres,qv,qs):
 
 
 def find_psd_thom(pdtime_range,station,run_dir,bins=[], reflectivity=False, shift=None):
+    '''
+    Calculate the snow-particle PSD as described in Thompson et al. 2008. 
+
+    INPUT:
+     - pdtime_range: a pandas datetime "date_range" for the time period of interest
+     - station: a predetermined lat/lon location for the model grid 
+     - run_dir: directory containing the WRF model output
+
+    OUTPUT:
+     - Ds: the bins of diameter size
+     - nD: snow particle number concentration as a function of diameter
+    '''
     
     # calculate diameter sizes (based on micro scheme) or use bins given
     if len(bins)==0:
@@ -424,6 +415,19 @@ def find_psd_thom(pdtime_range,station,run_dir,bins=[], reflectivity=False, shif
         return Ds,ND # Diameter sizes, Number concentration
 
 def find_psd_morr(pdtime_range,station,run_dir,bins=[],return_slope=False, reflectivity=False, shift=None):
+    '''
+    Calculate the snow-particle PSD as described in Morrison et al. 2009. 
+
+    INPUT:
+     - pdtime_range: a pandas datetime "date_range" for the time period of interest
+     - station: a predetermined lat/lon location for the model grid
+     - run_dir: directory containing the WRF model output
+
+    OUTPUT:
+     - Ds: the bins of diameter size
+     - nD: snow particle number concentration as a function of diameter
+    '''
+
     # Calculate diameter size bins, or use bins given
     if len(bins)==0:
         ## create bins of particle diameters (taken from Thompson microphysics scheme) ###
